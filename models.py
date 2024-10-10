@@ -61,6 +61,9 @@ class MVN_DDI(nn.Module):
         repr_d1 = []
         repr_d2 = []
 
+        # set the same dim (zero padding)
+
+
         for i, block in enumerate(self.blocks):
             out = block(data1, data2, b_graph)
 
