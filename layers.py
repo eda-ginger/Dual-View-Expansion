@@ -8,8 +8,8 @@
 ########## Import
 ########################################################################################################################
 
-import math
-import datetime
+# import math
+# import datetime
 
 import torch
 from torch import nn
@@ -62,7 +62,7 @@ class RESCAL(nn.Module):
         return scores
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({self.n_rels}, {self.rel_emb.weight.shape})"
+        return f"{self.__class__.__name__}({self.n_features})"
 
 
 # intra rep

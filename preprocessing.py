@@ -9,23 +9,27 @@
 ########## Import
 ########################################################################################################################
 
-import itertools
-from collections import defaultdict
-from operator import neg
-import random
-import math
+# import itertools
+# from collections import defaultdict
+# from operator import neg
+# import math
+# import json
+# from rdkit.Chem import AllChem
+# import pandas as pd
 
 import os
-import json
-
 import torch
+import random
+import numpy as np
+from rdkit import Chem
 from torch.nn import functional as F
 from torch.utils.data import Dataset, DataLoader
 from torch_geometric.data import Data, Batch
-from rdkit import Chem
-from rdkit.Chem import AllChem
-import pandas as pd
-import numpy as np
+
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', category=UserWarning)
+
 
 ########################################################################################################################
 ########## Functions - Common
@@ -37,7 +41,8 @@ class BipartiteData(Data):
         self.edge_index = edge_index
         self.x_s = x_s
         self.x_t = x_t
-        self.num_nodes = x_s.size(0) + x_t.size(0)
+        # self.num_nodes = x_s.size(0) + x_t.size(0)
+
     def __inc__(self, key, value, *args, **kwargs):
         if key == 'edge_index':
             return torch.tensor([[self.x_s.size(0)], [self.x_t.size(0)]])
@@ -46,9 +51,12 @@ class BipartiteData(Data):
 
 
 class CustomDataset(Dataset):
-    def __init__(self, tri_list , mode):
+    def __init__(self, tri_list , mode, shuffle=False):
         self.tri_list = tri_list
         self.mode = mode
+
+        if shuffle:
+            random.shuffle(self.tri_list)
 
     def __len__(self):
         return len(self.tri_list)
@@ -65,7 +73,7 @@ class CustomDataset(Dataset):
             d1_graph = self.__create_graph_data(d1, self.mode['d1'])
             d2_graph = self.__create_graph_data(d2, self.mode['d2'])
 
-            bi_edge_index = get_bipartite_graph(len(d1_graph), len(d2_graph))
+            bi_edge_index = get_bipartite_graph(len(d1_graph.x), len(d2_graph.x))
             bi_graph = self._create_b_graph(bi_edge_index, d1_graph.x, d2_graph.x)
 
             d1_samples.append(d1_graph)
@@ -76,25 +84,23 @@ class CustomDataset(Dataset):
         d1_samples = Batch.from_data_list(d1_samples)
         d2_samples = Batch.from_data_list(d2_samples)
         bi_samples = Batch.from_data_list(bi_samples)
-        labels = torch.LongTensor(labels).unsqueeze(0)
-
-        return d1_samples, d2_samples, bi_samples, labels
-
-    # 클래스나 모듈의 내부에서만 사용하기를 권장하지만, 외부에서 여전히 접근 가능 (네임 맹글링)
-    def __create_graph_data(self, m, mode):
-        if mode == 'drug':
-            en = get_mol_edge_list_and_feat_mtx(m)
-        elif mode == 'protein':
-            en = target_to_graph(m)
+        if self.mode['task'] == 'DTA':
+            labels = torch.FloatTensor(labels)
         else:
-            print('input type error!!!')
+            labels = torch.LongTensor(labels)
 
-        if en:
-            edge_index, n_features = en
-            return Data(x=n_features, edge_index=edge_index)
+        return d1_samples, d2_samples, labels, bi_samples
 
+    def __create_graph_data(self, m, mode):
+        if mode == 'Drug':
+            edge_index, n_features = get_mol_edge_list_and_feat_mtx(m)
+        elif mode == 'Protein':
+            edge_index, n_features = target_to_graph(m)
+        else:
+            raise Exception('Input type error!!!')
 
-    # 클래스나 모듈의 내부에서만 사용하기를 권장하지만, 외부에서 여전히 접근 가능
+        return Data(x=n_features, edge_index=edge_index)
+
     def _create_b_graph(self, edge_index, x_s, x_t):
         return BipartiteData(edge_index, x_s, x_t)
 
@@ -170,7 +176,6 @@ def get_mol_edge_list_and_feat_mtx(mol_graph):
     n_features.sort() # to make sure that the feature matrix is aligned according to the idx of the atom
     _, n_features = zip(*n_features)
     n_features = torch.stack(n_features)
-    n_features = n_features.double() # match protein features dtype
 
     edge_list = torch.LongTensor([(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol_graph.GetBonds()])
     undirected_edge_list = torch.cat([edge_list, edge_list[:, [1, 0]]], dim=0) if len(edge_list) else edge_list
@@ -310,100 +315,10 @@ def target_to_graph(target_inform):
     target_edge_index = torch.LongTensor([(i, j) for i, j in zip(index_row, index_col) if i != j]).T
     target_feature = target_to_feature(target_key, target_sequence, aln_dir)
     target_feature = F.pad(target_feature, (0, 1), mode='constant', value=0)
+    target_feature = target_feature.to(torch.float)
     return target_edge_index, target_feature
 
-# target_to_graph(key, proteins[key], contac_path, msa_path)
-# Data(x=n_features, edge_index=edge_index, size=len(n_features))
-
-# to judge whether the required files exist
-def valid_target(key, dataset):
-    contact_dir = 'data/' + dataset + '/pconsc4'
-    aln_dir = 'data/' + dataset + '/aln'
-    contact_file = os.path.join(contact_dir, key + '.npy')
-    aln_file = os.path.join(aln_dir, key + '.aln')
-    # print(contact_file, aln_file)
-    if os.path.exists(contact_file) and os.path.exists(aln_file):
-        return True
-    else:
-        return False
 
 ########################################################################################################################
 ########## Run
 ########################################################################################################################
-
-
-
-
-
-import rdkit
-from rdkit import Chem
-mol1 = Chem.MolFromSmiles('C1CCCCC1')
-mol2 = Chem.MolFromSmiles('FC(F)F')
-seq1 = 'MKKFFDSRREQGGSGLGSGSSGGGGSTSGLGSGYIGRVFGIGRQQVTVDEVLAEGGFAIVFLVRTSNGMKCALKRMFVNNEHDLQVCKREIQIMRDLSGHKNIVGYIDSSINNVSSGDVWEVLILMDFCRGGQVVNLMNQRLQTGFTENEVLQIFCDTCEAVARLHQCKTPIIHRDLKVENILLHDRGHYVLCDFGSATNKFQNPQTEGVNAVEDEIKKYTTLSYRAPEMVNLYSGKIITTKADIWALGCLLYKLCYFTLPFGESQVAICDGNFTIPDNSRYSQDMHCLIRYMLEPDPDKRPDIYQVSYFSFKLLKKECPIPNVQNSPIPAKLPEPVKASEAAAKKTQPKARLTDPIPTTETSIAPRQRPKAGQTQPNPGILPIQPALTPRKRATVQPPPQAAGSSNQPGLLASVPQPKPQAPPSQPLPQTQAKQPQAPPTPQQTPSTQAQGLPAQAQATPQHQQQLFLKQQQQQQQPPPAQQQPAGTFYQQQQAQTQQFQAVHPATQKPAIAQFPVVSQGGSQQQLMQNFYQQQQQQQQQQQQQQLATALHQQQLMTQQAALQQKPTMAAGQQPQPQPAAAPQPAPAQEPAIQAPVRQQPKVQTTPPPAVQGQKVGSLTPPSSPKTQRAGHRRILSDVTHSAVFGVPASKSTQLLQAAAAEASLNKSKSATTTPSGSPRTSQQNVYNPSEGSTWNPFDDDNFSKLTAEELLNKDFAKLGEGKHPEKLGGSAESLIPGFQSTQGDAFATTSFSAGTAEKRKGGQTVDSGLPLLSVSDPFIPLQVPDAPEKLIEGLKSPDTSLLLPDLLPMTDPFGSTSDAVIEKADVAVESLIPGLEPPVPQRLPSQTESVTSNRTDSLTGEDSLLDCSLLSNPTTDLLEEFAPTAISAPVHKAAEDSNLISGFDVPEGSDKVAEDEFDPIPVLITKNPQGGHSRNSSGSSESSLPNLARSLLLVDQLIDL'
-
-# create intra graph
-edge_index, n_features= get_mol_edge_list_and_feat_mtx(mol1)
-Data(x=n_features, edge_index=edge_index)
-
-edge_index2, n_features2 = get_mol_edge_list_and_feat_mtx(mol2)
-Data(x=n_features2, edge_index=edge_index2)
-
-# create inter graph
-# edge_index = get_bipartite_graph(mol1_size, mol2_size)
-# BipartiteData(edge_index, n_features, n_features2)
-
-
-
-
-# create target graph
-
-import json
-from collections import OrderedDict
-proteins = json.load(open('./proteins.txt'), object_pairs_hook=OrderedDict)
-
-prots = []
-prot_keys = []
-# load contact and aln
-from pathlib import Path
-fd = Path('prot/davis')
-msa_path = fd / 'aln'
-contac_path = fd / 'pconsc4'
-
-
-# seqs
-for t in proteins.keys():
-    prots.append(proteins[t])
-    prot_keys.append(t)
-
-test_prots = prots[:3]
-test_keys = prot_keys[:3]
-
-mols = ['CC(C)(C)c1cc(NC(=O)Nc2ccc(-c3cn4c(n3)sc3cc(OCCN5CCOCC5)ccc34)cc2)no1',
-        'CC(C)(C)c1cc(NC(=O)Nc2ccc(-c3cn4c(n3)sc3cc(OCCN5CCOCC5)ccc34)cc2)no1',
-        'CC(C)(C)c1cc(NC(=O)Nc2ccc(-c3cn4c(n3)sc3cc(OCCN5CCOCC5)ccc34)cc2)no1']
-
-mols = [Chem.MolFromSmiles(s) for s in mols]
-
-test_keys = ['AAK1',
-             'ABL1p',
-             'abl2']
-
-test_prots = ['MKKFFDSRREQGGSGLGSGSSGGGGSTSGLGSGYIGRVFGIGRQQVTVDEVLAEGGFAIVFLVRTSNGMKCALKRMFVNNEHDLQVCKREIQIMRDLSGHKNIVGYIDSSINNVSSGDVWEVLILMDFCRGGQVVNLMNQRLQTGFTENEVLQIFCDTCEAVARLHQCKTPIIHRDLKVENILLHDRGHYVLCDFGSATNKFQNPQTEGVNAVEDEIKKYTTLSYRAPEMVNLYSGKIITTKADIWALGCLLYKLCYFTLPFGESQVAICDGNFTIPDNSRYSQDMHCLIRYMLEPDPDKRPDIYQVSYFSFKLLKKECPIPNVQNSPIPAKLPEPVKASEAAAKKTQPKARLTDPIPTTETSIAPRQRPKAGQTQPNPGILPIQPALTPRKRATVQPPPQAAGSSNQPGLLASVPQPKPQAPPSQPLPQTQAKQPQAPPTPQQTPSTQAQGLPAQAQATPQHQQQLFLKQQQQQQQPPPAQQQPAGTFYQQQQAQTQQFQAVHPATQKPAIAQFPVVSQGGSQQQLMQNFYQQQQQQQQQQQQQQLATALHQQQLMTQQAALQQKPTMAAGQQPQPQPAAAPQPAPAQEPAIQAPVRQQPKVQTTPPPAVQGQKVGSLTPPSSPKTQRAGHRRILSDVTHSAVFGVPASKSTQLLQAAAAEASLNKSKSATTTPSGSPRTSQQNVYNPSEGSTWNPFDDDNFSKLTAEELLNKDFAKLGEGKHPEKLGGSAESLIPGFQSTQGDAFATTSFSAGTAEKRKGGQTVDSGLPLLSVSDPFIPLQVPDAPEKLIEGLKSPDTSLLLPDLLPMTDPFGSTSDAVIEKADVAVESLIPGLEPPVPQRLPSQTESVTSNRTDSLTGEDSLLDCSLLSNPTTDLLEEFAPTAISAPVHKAAEDSNLISGFDVPEGSDKVAEDEFDPIPVLITKNPQGGHSRNSSGSSESSLPNLARSLLLVDQLIDL',
-              'PFWKILNPLLERGTYYYFMGQQPGKVLGDQRRPSLPALHFIKGAGKKESSRHGGPHCNVFVEHEALQRPVASDFEPQGLSEAARWNSKENLLAGPSENDPNLFVALYDFVASGDNTLSITKGEKLRVLGYNHNGEWCEAQTKNGQGWVPSNYITPVNSLEKHSWYHGPVSRNAAEYLLSSGINGSFLVRESESSPGQRSISLRYEGRVYHYRINTASDGKLYVSSESRFNTLAELVHHHSTVADGLITTLHYPAPKRNKPTVYGVSPNYDKWEMERTDITMKHKLGGGQYGEVYEGVWKKYSLTVAVKTLKEDTMEVEEFLKEAAVMKEIKHPNLVQLLGVCTREPPFYIITEFMTYGNLLDYLRECNRQEVNAVVLLYMATQISSAMEYLEKKNFIHRDLAARNCLVGENHLVKVADFGLSRLMTGDTYTAHAGAKFPIKWTAPESLAYNKFSIKSDVWAFGVLLWEIATYGMSPYPGIDLSQVYELLEKDYRMERPEGCPEKVYELMRACWQWNPSDRPSFAEIHQAFETMFQESSISDEVEKELGKQGVRGAVSTLLQAPELPTKTRTSRRAAEHRDTTDVPEMPHSKGQGESDPLDHEPAVSPLLPRKERGPPEGGLNEDERLLPKDKKTNLFSALIKKKKKTAPTPPKRSSSFREMDGQPERRGAGEEEGRDISNGALAFTPLDTADPAKSPKPSNGAGVPNGALRESGGSGFRSPHLWKKSSTLTSSRLATGEEEGGGSSSKRFLRSCSASCVPHGAKDTEWRSVTLPRDLQSTGRQFDSSTFGGHKSEKPALPRKRAGENRSDQVTRGTVTPPPRLVKKNEEAADEVFKDIMESSPGSSPPNLTPKPLRRQVTVAPASGLPHKEEAGKGSALGTPAAAEPVTPTSKAGSGAPGGTSKGPAEESRVRRHKHSSESPGRDKGKLSRLKPAPPPPPAASAGKAGGKPSQSPSQEAAGEAVLGAKTKATSLVDAVNSDAAKPSQPGEGLKKPVLPATPKPQSAKPSGTPISPAPVPSTLPSASSALAGDQPSSTAFIPLISTRVSLRKTRQPPERIASGAITKGVVLDSTEALCLAISRNSEQMASHSAVLEAGKNLYTFCVSYVDSIQQMRNKFAFREAINKLENNLRELQICPATAGSGPAATQDFSKLLSSVKEISDIVQR',
-              'MVLGTVLLPPNSYGRDQDTSLCCLCTEASESALPDLTDHFASCVEDGFEGDKTGGSSPEALHRPYGCDVEPQALNEAIRWSSKENLLGATESDPNLFVALYDFVASGDNTLSITKGEKLRVLGYNQNGEWSEVRSKNGQGWVPSNYITPVNSLEKHSWYHGPVSRSAAEYLLSSLINGSFLVRESESSPGQLSISLRYEGRVYHYRINTTADGKVYVTAESRFSTLAELVHHHSTVADGLVTTLHYPAPKCNKPTVYGVSPIHDKWEMERTDITMKHKLGGGQYGEVYVGVWKKYSLTVAVKTLKEDTMEVEEFLKEAAVMKEIKHPNLVQLLGVCTLEPPFYIVTEYMPYGNLLDYLRECNREEVTAVVLLYMATQISSAMEYLEKKNFIHRDLAARNCLVGENHVVKVADFGLSRLMTGDTYTAHAGAKFPIKWTAPESLAYNTFSIKSDVWAFGVLLWEIATYGMSPYPGIDLSQVYDLLEKGYRMEQPEGCPPKVYELMRACWKWSPADRPSFAETHQAFETMFHDSSISEEVAEELGRAASSSSVVPYLPRLPILPSKTRTLKKQVENKENIEGAQDATENSASSLAPGFIRGAQASSGSPALPRKQRDKSPSSLLEDAKETCFTRDRKGGFFSSFMKKRNAPTPPKRSSSFREMENQPHKKYELTGNFSSVASLQHADGFSFTPAQQEANLVPPKCYGGSFAQRNLCNDDGGGGGGSGTAGGGWSGITGFFTPRLIKKTLGLRAGKPTASDDTSKPFPRSNSTSSMSSGLPEQDRMAMTLPRNCQRSKLQLERTVSTSSQPEENVDRANDMLPKKSEESAAPSRERPKAKLLPRGATALPLRTPSGDLAITEKDPPGVGVAGVAAAPKGKEKNGGARLGMAGVPEDGEQPGWPSPAKAAPVLPTTHNHKVPVLISPTLKHTPADVQLIGTDSQGNKFKLLSEHQVTSSGDKDRPRRVKPKCAPPPPPVMRLLQHPSICSDPTEEPTALTAGQSTSETQEGGKKAALGAVPISGKAGRPVMPPPQVPLPTSSISPAKMANGTAGTKVALRKTKQAAEKISADKISKEALLECADLLSSALTEPVPNSQLVDTGHQLLDYCSGYVDCIPQTRNKFAFREAVSKLELSLQELQVSSAAAGVPGTNPVLNNLLSCVQEISDVVQR']
-
-tps = [(key, seq, contac_path, msa_path) for key, seq in zip(test_keys, test_prots)]
-
-ys = [10000, 2600, 10000]
-
-test_tup = [(m, p, l) for m, p, l in zip(mols, tps, ys)]
-test_md = {'d1': 'drug', 'd2': 'protein'}
-
-
-c = CustomDataset(test_tup, mode=test_md)
-l = CustomDataLoader(c, batch_size=3)
-for batch in l:
-    break
-
-Batch.from_data_list([BipartiteData(edge_index, n_features, n_features2)])
-BipartiteData(edge_index, n_features, n_features2)

@@ -79,7 +79,7 @@ class MVN_DDI(nn.Module):
 
         attentions = self.co_attention(repr_d1, repr_d2)
         scores = self.KGE(repr_d1, repr_d2, attentions)
-        return scores
+        return scores, labels
 
 
 class MVN_DDI_Block(nn.Module):
@@ -95,6 +95,7 @@ class MVN_DDI_Block(nn.Module):
         self.readout = SAGPooling(n_heads * head_out_feats, min_score=-1)
 
     def forward(self, data1, data2, b_graph):
+
         data1.x = self.feature_conv(data1.x, data1.edge_index)
         data2.x = self.feature_conv(data2.x, data2.edge_index)
 
