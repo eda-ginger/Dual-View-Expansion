@@ -14,9 +14,11 @@ import datetime
 import torch
 from torch import nn
 import torch.nn.functional as F
+from torch_geometric.nn import GATConv
 
-from torch_geometric.nn import GCNConv,SAGPooling,global_add_pool,GATConv
-
+########################################################################################################################
+########## Layers
+########################################################################################################################
 
 class CoAttentionLayer(nn.Module):
     def __init__(self, n_features):
