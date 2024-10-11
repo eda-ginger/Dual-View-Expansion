@@ -3,6 +3,7 @@
 ########################################################################################################################
 
 # https://github.com/microsoft/Drug-Interaction-Research/tree/DSN-DDI-for-DDI-Prediction
+# https://github.com/JK-Liu7/AttentionMGT-DTA/tree/main
 
 ########################################################################################################################
 ########## Import
@@ -33,12 +34,13 @@ from layers import (
 
 
 class MVN_DDI(nn.Module):
-    def __init__(self, in_features, hidd_dim, kge_dim, heads_out_feat_params, blocks_params):
+    def __init__(self, in_features, hidd_dim, kge_dim, heads_out_feat_params, blocks_params, task='DTA'):
         super().__init__()
         self.in_features = in_features
         self.hidd_dim = hidd_dim
         self.kge_dim = kge_dim
         self.n_blocks = len(blocks_params)
+        self.task = task
 
         self.initial_norm = LayerNorm(self.in_features)
         self.blocks = []
@@ -50,8 +52,30 @@ class MVN_DDI(nn.Module):
             self.net_norms.append(LayerNorm(head_out_feats * n_heads))
             in_features = head_out_feats * n_heads
 
-        self.co_attention = CoAttentionLayer(self.kge_dim)
-        self.KGE = RESCAL(self.kge_dim)
+        if self.task == 'DTA':
+            # AttentionMGT-DTA
+
+            self.relu = nn.ReLU()
+            self.sigmoid = nn.Sigmoid()
+            self.tanh = nn.Tanh()
+            self.joint_attn_comp = nn.Linear(in_features, in_features)
+            self.joint_attn_prot = nn.Linear(in_features, in_features)
+
+            self.classifier = nn.Sequential(
+                nn.Linear(in_features, 1024),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(1024, 1024),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(1024, 256),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(256, 1)
+            )
+        else:
+            self.co_attention = CoAttentionLayer(self.kge_dim)
+            self.KGE = RESCAL(self.kge_dim)
 
     def forward(self, triples):
         data1, data2, labels, b_graph = triples
@@ -60,9 +84,6 @@ class MVN_DDI(nn.Module):
         data2.x = self.initial_norm(data2.x, data2.batch)
         repr_d1 = []
         repr_d2 = []
-
-        # set the same dim (zero padding)
-
 
         for i, block in enumerate(self.blocks):
             out = block(data1, data2, b_graph)
@@ -77,12 +98,25 @@ class MVN_DDI(nn.Module):
             data1.x = F.elu(self.net_norms[i](data1.x, data1.batch))
             data2.x = F.elu(self.net_norms[i](data2.x, data2.batch))
 
-        repr_d1 = torch.stack(repr_d1, dim=-2)
-        repr_d2 = torch.stack(repr_d2, dim=-2)
+        repr_d1 = torch.stack(repr_d1, dim=-2) # 12, 4, 128 :: batch, block, features
+        repr_d2 = torch.stack(repr_d2, dim=-2) # 12, 4, 128 :: batch, block, features
 
-        attentions = self.co_attention(repr_d1, repr_d2)
-        scores = self.KGE(repr_d1, repr_d2, attentions)
-        return scores, labels
+        if self.task == 'DTA':
+            # compound-protein interaction
+            inter_comp_prot = self.sigmoid(torch.einsum('bij,bkj->bik', self.joint_attn_prot(self.relu(repr_d2)), self.joint_attn_comp(self.relu(repr_d1)))) # batch, 4, 4
+            inter_comp_prot_sum = torch.einsum('bij->b', inter_comp_prot) # batch, 1
+            inter_comp_prot = torch.einsum('bij,b->bij', inter_comp_prot, 1/inter_comp_prot_sum) # batch, 4, 4
+
+            # compound-protein joint embedding
+            cp_embedding = self.tanh(torch.einsum('bij,bkj->bikj', repr_d2, repr_d1)) # batch, 4, 4, 128
+            cp_embedding = torch.einsum('bijk,bij->bk', cp_embedding, inter_comp_prot) # batch, 128
+            x = self.classifier(cp_embedding).squeeze()
+            return x, labels
+
+        else:
+            attentions = self.co_attention(repr_d1, repr_d2) # 4, 4
+            scores = self.KGE(repr_d1, repr_d2, attentions) # 1
+            return scores, labels
 
 
 class MVN_DDI_Block(nn.Module):

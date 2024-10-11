@@ -8,9 +8,6 @@
 ########## Import
 ########################################################################################################################
 
-# import math
-# import datetime
-
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -35,10 +32,13 @@ class CoAttentionLayer(nn.Module):
         nn.init.xavier_uniform_(self.a.view(*self.a.shape, -1))
 
     def forward(self, receiver, attendant):
-        keys = receiver @ self.w_k
-        queries = attendant @ self.w_q
+        keys = receiver @ self.w_k      # (#block, 55) @ (55, 27) -> (#block, 27)
+        queries = attendant @ self.w_q  # (#block, 55) @ (55, 27) -> (#block, 27)
 
+        # (#block, #block, 27)
         e_activations = queries.unsqueeze(-3) + keys.unsqueeze(-2) + self.bias
+
+        # (#block, #block, 27) @ (27, ) -> (#block, #block) -> (4, 4)
         e_scores = torch.tanh(e_activations) @ self.a
         attentions = e_scores
         return attentions
@@ -53,12 +53,11 @@ class RESCAL(nn.Module):
         heads = F.normalize(heads, dim=-1)
         tails = F.normalize(tails, dim=-1)
 
-        scores = heads @ tails.transpose(-2, -1)
+        scores = heads @ tails.transpose(-2, -1) # (batch, 4, 128) @ (batch, 128 @ 4) -> (batch, 4, 4)
 
         if alpha_scores is not None:
-            scores = alpha_scores * scores
-        scores = scores.sum(dim=(-2, -1))
-
+            scores = alpha_scores * scores # batch, 4, 4
+        scores = scores.sum(dim=(-2, -1))  # batch, 1
         return scores
 
     def __repr__(self):
@@ -93,3 +92,5 @@ class InterGraphAttention(nn.Module):
         t_rep = self.inter((h_input, t_input), edge_index)
         h_rep = self.inter((t_input, h_input), edge_index[[1, 0]])
         return h_rep, t_rep
+
+
