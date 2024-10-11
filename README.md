@@ -15,16 +15,16 @@ pip install pyg_lib torch_scatter torch_sparse torch_cluster torch_spline_conv -
 pip install dgl -f https://data.dgl.ai/wheels/cu124/repo.html
 pip install rdkit deepchem tqdm
 
-# protein
-pip3 install numpy Cython pythran
-pip3 install pconsc4
-conda install -c conda-forge -c bioconda hhsuite 
-
-
 # custom
 pip install knockknock jupyter
+conda install conda-forge::pytdc -y
 
-conda install conda-forge::pytdc - y
+## protein
+#pip3 install numpy Cython pythran
+#pip3 install pconsc4
+#conda install -c conda-forge -c bioconda hhsuite 
+
+
 ```
 
 ---
