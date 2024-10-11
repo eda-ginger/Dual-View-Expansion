@@ -11,7 +11,6 @@
 
 import os
 import time
-import copy
 import utils
 import torch
 import models
@@ -41,7 +40,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 loss_dict = {'DTA': F.mse_loss, 'PPI': F.binary_cross_entropy}
 
 metrics_dict = {'DTA': {'MSE': mse, 'RMSE': rmse, 'CI': ci, 'RM2': rm2,
-                        'Pearson': pearson, 'Spearman': spearman},
+                        'Pearson': precision, 'Spearman': spearman},
                 'PPI': {'ACC': accuracy, 'AUC': auc_score, 'Precision': precision,
                         'Recall': recall, 'F1-score': f1_score, 'AUPR': aupr}}
 
@@ -321,7 +320,6 @@ if __name__ == '__main__':
         # train & evaluation
         best_epoch = -1
         performs = pd.DataFrame()
-        model_state = model.state_dict()
         task_metric = metrics_dict[task_name]
 
         if task_name == 'DTA':
@@ -335,7 +333,7 @@ if __name__ == '__main__':
                     # save loss
                     best_loss = val_loss
                     best_epoch = epoch + 1
-                    model_state = copy.deepcopy(model.state_dict())
+                    torch.save(model.state_dict(), model_folder / f'DTA_{project_name}_seed{seed}_best.pt')
 
                     # tst
                     tst_preds, tst_reals = evaluation(model, device, tst_loader)
@@ -349,16 +347,14 @@ if __name__ == '__main__':
                     performs['Task'] = task_name
                     performs['Project'] = project_name
                     performs['Best_epoch'] = best_epoch
+                    performs.to_csv(model_folder / f'DTA_{project_name}_seed{seed}_best.csv', header=True, index=False)
 
                     logger.info(f"(seed: {seed}) improved at epoch {best_epoch}; best loss: {best_loss}")
                 else:
                     logger.info(f"(seed: {seed}) No improvement since epoch {best_epoch}; best loss: {best_loss}")
 
             if not performs.empty:
-                torch.save(model_state, model_folder / f'DTA_{project_name}_seed{seed}_best.pt')
-                performs.to_csv(model_folder / f'DTA_{project_name}_seed{seed}_best.csv', header=True, index=False)
                 total_results.append(performs)
-
             logger.info(f'====> (seed: {seed}) best epoch: {best_epoch}; best_loss: {best_loss}')
             logger.info(f"#####" * 20)
 
@@ -373,7 +369,7 @@ if __name__ == '__main__':
                     # save loss
                     best_auc = val_auc
                     best_epoch = epoch + 1
-                    model_state = copy.deepcopy(model.state_dict())
+                    torch.save(model.state_dict(), model_folder / f'PPI_{project_name}_seed{seed}_best.pt')
 
                     # tst
                     tst_preds, tst_reals = evaluation(model, device, tst_loader, 'cls')
@@ -387,16 +383,15 @@ if __name__ == '__main__':
                     performs['Task'] = task_name
                     performs['Project'] = project_name
                     performs['Best_epoch'] = best_epoch
+                    performs.to_csv(model_folder / f'PPI_{project_name}_seed{seed}_best.csv', header=True, index=False)
 
                     logger.info(f"(seed: {seed}) Improved at epoch {best_epoch}; best auc: {best_auc}")
                 else:
-                    logger.info(f"(seed: {seed}) No improvement since epoch {best_epoch}; best auc: {best_auc}")
+                    logger.info(
+                        f"(seed: {seed}) No improvement since epoch {best_epoch}; best auc: {best_auc}")
 
             if not performs.empty:
-                torch.save(model_state, model_folder / f'PPI_{project_name}_seed{seed}_best.pt')
-                performs.to_csv(model_folder / f'PPI_{project_name}_seed{seed}_best.csv', header=True, index=False)
                 total_results.append(performs)
-
             logger.info(f'====> (seed: {seed}) best epoch: {best_epoch}; best_auc: {best_auc}')
             logger.info(f"#####" * 20)
 
