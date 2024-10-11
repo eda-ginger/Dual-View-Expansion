@@ -326,6 +326,7 @@ if __name__ == '__main__':
 
         if task_name == 'DTA':
             best_loss = np.inf
+            model_results = {}
             for epoch in range(n_epochs):
                 trn_preds, trn_reals, trn_loss = train(model, device, trn_loader, loss_fn, optimizer, epoch + 1)
                 val_preds, val_reals = evaluation(model, device, val_loader)
@@ -340,24 +341,32 @@ if __name__ == '__main__':
                     # tst
                     tst_preds, tst_reals = evaluation(model, device, tst_loader)
 
-                    # perform
-                    trn_perform = cal_perform(trn_preds, trn_reals, 'trn', task_metric)
-                    val_perform = cal_perform(val_preds, val_reals, 'val', task_metric)
-                    tst_perform = cal_perform(tst_preds, tst_reals, 'tst', task_metric)
-                    performs = pd.DataFrame([trn_perform, val_perform, tst_perform])
-                    performs['Seed'] = seed
-                    performs['Task'] = task_name
-                    performs['Project'] = project_name
-                    performs['Best_epoch'] = best_epoch
+                    model_results['trn'] = (trn_preds, trn_reals)
+                    model_results['val'] = (val_preds, val_reals)
+                    model_results['tst'] = (tst_preds, tst_reals)
 
                     logger.info(f"(seed: {seed}) improved at epoch {best_epoch}; best loss: {best_loss}")
                 else:
                     logger.info(f"(seed: {seed}) No improvement since epoch {best_epoch}; best loss: {best_loss}")
 
-            if not performs.empty:
-                torch.save(model_state, model_folder / f'DTA_{project_name}_seed{seed}_best.pt')
-                performs.to_csv(model_folder / f'DTA_{project_name}_seed{seed}_best.csv', header=True, index=False)
-                total_results.append(performs)
+
+            torch.save(model_state, model_folder / f'DTA_{project_name}_seed{seed}_best.pt')
+
+            trn_preds, trn_reals = model_results['trn']
+            val_preds, val_reals = model_results['val']
+            tst_preds, tst_reals = model_results['tst']
+
+            # perform
+            trn_perform = cal_perform(trn_preds, trn_reals, 'trn', task_metric)
+            val_perform = cal_perform(val_preds, val_reals, 'val', task_metric)
+            tst_perform = cal_perform(tst_preds, tst_reals, 'tst', task_metric)
+            performs = pd.DataFrame([trn_perform, val_perform, tst_perform])
+            performs['Seed'] = seed
+            performs['Task'] = task_name
+            performs['Project'] = project_name
+            performs['Best_epoch'] = best_epoch
+            performs.to_csv(model_folder / f'DTA_{project_name}_seed{seed}_best.csv', header=True, index=False)
+            total_results.append(performs)
 
             logger.info(f'====> (seed: {seed}) best epoch: {best_epoch}; best_loss: {best_loss}')
             logger.info(f"#####" * 20)
@@ -371,31 +380,38 @@ if __name__ == '__main__':
 
                 if val_auc > best_auc:
                     # save loss
-                    best_auc = val_auc
+                    best_loss = val_loss
                     best_epoch = epoch + 1
                     model_state = copy.deepcopy(model.state_dict())
 
                     # tst
-                    tst_preds, tst_reals = evaluation(model, device, tst_loader, 'cls')
+                    tst_preds, tst_reals = evaluation(model, device, tst_loader)
 
-                    # perform
-                    trn_perform = cal_perform(trn_preds, trn_reals, 'trn', task_metric)
-                    val_perform = cal_perform(val_preds, val_reals, 'val', task_metric)
-                    tst_perform = cal_perform(tst_preds, tst_reals, 'tst', task_metric)
-                    performs = pd.DataFrame([trn_perform, val_perform, tst_perform])
-                    performs['Seed'] = seed
-                    performs['Task'] = task_name
-                    performs['Project'] = project_name
-                    performs['Best_epoch'] = best_epoch
+                    model_results['trn'] = (trn_preds, trn_reals)
+                    model_results['val'] = (val_preds, val_reals)
+                    model_results['tst'] = (tst_preds, tst_reals)
 
                     logger.info(f"(seed: {seed}) Improved at epoch {best_epoch}; best auc: {best_auc}")
                 else:
                     logger.info(f"(seed: {seed}) No improvement since epoch {best_epoch}; best auc: {best_auc}")
 
-            if not performs.empty:
-                torch.save(model_state, model_folder / f'PPI_{project_name}_seed{seed}_best.pt')
-                performs.to_csv(model_folder / f'PPI_{project_name}_seed{seed}_best.csv', header=True, index=False)
-                total_results.append(performs)
+            torch.save(model_state, model_folder / f'PPI_{project_name}_seed{seed}_best.pt')
+
+            trn_preds, trn_reals = model_results['trn']
+            val_preds, val_reals = model_results['val']
+            tst_preds, tst_reals = model_results['tst']
+
+            # perform
+            trn_perform = cal_perform(trn_preds, trn_reals, 'trn', task_metric)
+            val_perform = cal_perform(val_preds, val_reals, 'val', task_metric)
+            tst_perform = cal_perform(tst_preds, tst_reals, 'tst', task_metric)
+            performs = pd.DataFrame([trn_perform, val_perform, tst_perform])
+            performs['Seed'] = seed
+            performs['Task'] = task_name
+            performs['Project'] = project_name
+            performs['Best_epoch'] = best_epoch
+            performs.to_csv(model_folder / f'PPI_{project_name}_seed{seed}_best.csv', header=True, index=False)
+            total_results.append(performs)
 
             logger.info(f'====> (seed: {seed}) best epoch: {best_epoch}; best_auc: {best_auc}')
             logger.info(f"#####" * 20)
