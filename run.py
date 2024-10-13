@@ -214,6 +214,7 @@ if __name__ == '__main__':
     # data_name = 'davis'
     # task_name = 'DTA'
     # project_name = 'Test1'
+    # architecture = 'DSN'
     # batch_size = 12
     # lr = 1e-3
     # weight_decay = 5e-4

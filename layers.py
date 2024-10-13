@@ -58,7 +58,7 @@ class RESCAL(nn.Module):
         if alpha_scores is not None:
             scores = alpha_scores * scores # batch, 4, 4
         # scores = scores.sum(dim=(-2, -1))  # batch, 1
-        socres = scores.sum(dim=-2) # batch, 4, 1 (sum row)
+        scores = scores.sum(dim=-2) # batch, 4, 1 (sum row)
         return scores
 
     def __repr__(self):
