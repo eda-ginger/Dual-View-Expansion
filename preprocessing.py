@@ -61,10 +61,7 @@ class CustomDataset(Dataset):
         bi_samples = []
         labels = []
         for d1, d2, label in batch:
-            d1_graph = self.__create_graph_data(d1, self.mode['d1'])
-            d2_graph = self.__create_graph_data(d2, self.mode['d2'])
-
-            d1_graph, d2_graph = self._zero_pad_nodes(d1_graph, d2_graph)
+            d1_graph, d2_graph = self._zero_pad_nodes(d1, d2)
 
             bi_edge_index = get_bipartite_graph(len(d1_graph.x), len(d2_graph.x))
             bi_graph = self._create_b_graph(bi_edge_index, d1_graph.x, d2_graph.x)
@@ -85,15 +82,6 @@ class CustomDataset(Dataset):
             raise Exception(f'Wrong task type {self.mode["task"]}')
 
         return d1_samples, d2_samples, labels, bi_samples
-
-    def __create_graph_data(self, m, mode):
-        if mode == 'Drug':
-            edge_index, n_features = get_mol_edge_list_and_feat_mtx(m)
-            return Data(x=n_features, edge_index=edge_index)
-        elif mode == 'Protein':
-            return m
-        else:
-            raise Exception('Input type error!!!')
 
     def _create_b_graph(self, edge_index, x_s, x_t):
         return BipartiteData(edge_index, x_s, x_t)

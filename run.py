@@ -26,7 +26,8 @@ from torch import optim
 from pathlib import Path
 from datetime import date
 import torch.nn.functional as F
-from preprocessing import CustomDataset, CustomDataLoader
+from preprocessing import CustomDataset, CustomDataLoader, get_mol_edge_list_and_feat_mtx
+from torch_geometric.data import Data
 
 ########################################################################################################################
 ########## Pre-settings
@@ -52,8 +53,9 @@ metrics_dict = {'DTA': {'MSE': mse, 'RMSE': rmse, 'CI': ci, 'RM2': rm2,
 
 def valid_drug(smi):
     mol = Chem.MolFromSmiles(smi)
-    return mol
-
+    if mol:
+        edge_index, n_features = get_mol_edge_list_and_feat_mtx(mol)
+        return Data(x=n_features, edge_index=edge_index)
 
 def valid_protein(protein, dn, prot_inform):
     key, seq = protein
