@@ -130,7 +130,7 @@ class MVN_DDI(nn.Module):
         else:
             attentions = self.co_attention(repr_d1, repr_d2) # 4, 4
             scores = self.KGE(repr_d1, repr_d2, attentions) # 4, 1
-            scores = self.classifier(scores) # 1
+            scores = self.classifier(scores).squeeze() # 1
             return scores, labels
 
 
