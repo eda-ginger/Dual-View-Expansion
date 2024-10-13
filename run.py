@@ -159,6 +159,8 @@ if __name__ == '__main__':
     parser.add_argument('--data_name', type=str, required=True, help='dataset name')
     parser.add_argument('--task_name', type=str, required=True, help='task (DTA or PPI)')
     parser.add_argument('--project_name', type=str, required=True, help='project name')
+    parser.add_argument('--architecture', type=str, required=True, help='choose architecture (DSN, DSN-joint)')
+
 
     parser.add_argument('--n_atom_feats', type=int, default=55, help='num of input features')
     parser.add_argument('--n_atom_hid', type=int, default=128, help='num of hidden features')
@@ -182,6 +184,7 @@ if __name__ == '__main__':
     data_name = args.data_name
     task_name = args.task_name
     project_name = args.project_name
+    architecture = args.architecture
 
     n_atom_feats = args.n_atom_feats
     n_atom_hid = args.n_atom_hid
@@ -241,6 +244,7 @@ if __name__ == '__main__':
     logger.info(f'data_name: {data_name}')
     logger.info(f'task_name: {task_name}')
     logger.info(f'project_name: {project_name}')
+    logger.info(f'architecture: {architecture}')
     logger.info(f'batch_size: {batch_size}')
     logger.info(f'lr: {lr}')
     logger.info(f'device: {device}')
@@ -304,9 +308,12 @@ if __name__ == '__main__':
 
         # Define model
         model = models.MVN_DDI(n_atom_feats, n_atom_hid, kge_dim, heads_out_feat_params=[64, 64, 64, 64],
-                               blocks_params=[2, 2, 2, 2], task=task_name)
+                               blocks_params=[2, 2, 2, 2], arch=architecture)
+
         model.to(device)
 
+        logger.info(f'Model:\n{model}')
+        logger.info(f'Model params: {sum(p.numel() for p in model.parameters())}')
         loss_fn = loss_dict[task_name]
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         scheduler = optim.lr_scheduler.LambdaLR(optimizer, lambda epoch: 0.96 ** (epoch))

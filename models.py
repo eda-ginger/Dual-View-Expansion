@@ -34,13 +34,13 @@ from layers import (
 
 
 class MVN_DDI(nn.Module):
-    def __init__(self, in_features, hidd_dim, kge_dim, heads_out_feat_params, blocks_params, task='DTA'):
+    def __init__(self, in_features, hidd_dim, kge_dim, heads_out_feat_params, blocks_params, arch='DSN-Joint'):
         super().__init__()
         self.in_features = in_features
         self.hidd_dim = hidd_dim
         self.kge_dim = kge_dim
         self.n_blocks = len(blocks_params)
-        self.task = task
+        self.arch = arch
 
         self.initial_norm = LayerNorm(self.in_features)
         self.blocks = []
@@ -52,7 +52,7 @@ class MVN_DDI(nn.Module):
             self.net_norms.append(LayerNorm(head_out_feats * n_heads))
             in_features = head_out_feats * n_heads
 
-        if self.task == 'DTA':
+        if self.arch == 'DSN-Joint':
             # AttentionMGT-DTA
 
             self.relu = nn.ReLU()
@@ -75,7 +75,21 @@ class MVN_DDI(nn.Module):
             )
         else:
             self.co_attention = CoAttentionLayer(self.kge_dim)
-            self.KGE = RESCAL(self.kge_dim)
+            self.KGE = RESCAL(self.kge_dim) # batch, 4, 1
+
+            # mlp
+            self.classifier = nn.Sequential(
+                nn.Linear(4, 8),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(8, 16),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(16, 8),
+                nn.ReLU(),
+                nn.Dropout(0.1),
+                nn.Linear(8, 1)
+            )
 
     def forward(self, triples):
         data1, data2, labels, b_graph = triples
@@ -101,7 +115,7 @@ class MVN_DDI(nn.Module):
         repr_d1 = torch.stack(repr_d1, dim=-2) # 12, 4, 128 :: batch, block, features
         repr_d2 = torch.stack(repr_d2, dim=-2) # 12, 4, 128 :: batch, block, features
 
-        if self.task == 'DTA':
+        if self.arch == 'DSN-Joint':
             # compound-protein interaction
             inter_comp_prot = self.sigmoid(torch.einsum('bij,bkj->bik', self.joint_attn_prot(self.relu(repr_d2)), self.joint_attn_comp(self.relu(repr_d1)))) # batch, 4, 4
             inter_comp_prot_sum = torch.einsum('bij->b', inter_comp_prot) # batch, 1
@@ -115,7 +129,8 @@ class MVN_DDI(nn.Module):
 
         else:
             attentions = self.co_attention(repr_d1, repr_d2) # 4, 4
-            scores = self.KGE(repr_d1, repr_d2, attentions) # 1
+            scores = self.KGE(repr_d1, repr_d2, attentions) # 4, 1
+            scores = self.classifier(scores) # 1
             return scores, labels
 
 
