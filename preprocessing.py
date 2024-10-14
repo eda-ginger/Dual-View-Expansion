@@ -32,7 +32,6 @@ class BipartiteData(Data):
         self.edge_index = edge_index
         self.x_s = x_s
         self.x_t = x_t
-        # self.num_nodes = x_s.size(0) + x_t.size(0)
 
     def __inc__(self, key, value, *args, **kwargs):
         if key == 'edge_index':
